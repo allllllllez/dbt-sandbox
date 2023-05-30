@@ -19,7 +19,7 @@ services:
     depends_on:
       - dev_postgres
   dev_postgres:
-    image: postgres
+    image: postgres:15.2
     volumes:
       - ./initdb:/docker-entrypoint-initdb.d
     ports:
