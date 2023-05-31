@@ -48,7 +48,7 @@ Dimentional modeling はデータモデリング手法（※）の一つで、�
 
 （※）その他のデータモデリング手法には、Data Vault (DV)、Third Normal Form (3NF)、One Big Table (OBT) などがあります。[元記事より拝借](https://docs.getdbt.com/img/blog/2023-04-18-building-a-kimball-dimensional-model-with-dbt/data-modelling.png)：
 
-<img src="./img/data-modelling.png" width=600 title="Data modeling techniques on a normalization vs denormalization scale">
+<img src="./img/data-modelling.png" width=800 title="Data modeling techniques on a normalization vs denormalization scale">
 
 このチュートリアルを完了すると、次のことができるようになります。
 
@@ -308,7 +308,7 @@ root@docker-desktop:/usr/app/dbt/dbt-dimensional-modelling/adventureworks# dbt s
 - キー
 - リレーション
 
-<img src="./img/adventureworks-er-diagram.png" width=600 title="title">
+<img src="./img/adventureworks-er-diagram.png" width=800 title="title">
 
 ### Step 8: Query the tables
 
@@ -333,9 +333,29 @@ select * from sales.salesorderheader limit 10;
         43666 |            5 |            1074 | 2011-06-07 00:00:00 | e2a90057-1366-4487-8a7e-8085845ff770 |  486.3747 |            1074 | f               |           4 |      5 | 2011-05-31 00:00:00 | 105623Vi69217          |  5056.4896 |        13349 |                |              8 |  151.9921 | 2011-06-12 00:00:00 |  5694.8564 |      30052 |           276 | 2011-06-07 00:00:00 | 10-4020-000514
 ```
 
+<!-- TODO めんどくさいので一気に pandas profiling とか実行するやつほしいね -->
+
+
 dbt プロジェクトとデータベースのセットアップが完了したら、次はディメンションモデルに必要なテーブルを特定するパートに移ります。
 
 ## Part 2: Identify the business process
+
+dbt プロジェクト、データベースのセットアップが完了し、スキーマを覗き見たところで、いよいよビジネスプロセスの特定に入ります。
+ビジネスプロセスの特定は、ビジネスユーザーとの共同作業で行われます。ビジネス目標やビジネスプロセスに関するコンテキストはビジネスユーザーが持っており、それをあなたに教えてくれます。
+<!-- ビジネスユーザーこそが情報を持っており、あなたに教えることができるのですって感じかな？ -->
+
+AdventureWorks の CEOと話して、次のような情報が得られました：
+
+> AdventureWorksは自転車を製造し、消費者（B2C）および企業（B2B）に販売しています。
+> 自転車は世界中の顧客に発送されています。この事業のCEOとして、2011年末の1年間の売上高を、以下の内訳で知りたいです：
+> - 製品カテゴリーとサブカテゴリー
+> - 顧客
+> - 注文状況
+> - 配送先の国、州、都市
+
+ビジネスユーザーから提供された情報に基づいて、あなたは問題のビジネスプロセスが「販売」プロセスであることを特定しました。
+次のパートでは、販売プロセスの Dimentional model を設計します。
+
 ## Part 3: Identify the fact and dimension tables 
 ## Fact tables 
 ## Dimension tables
