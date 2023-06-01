@@ -370,7 +370,7 @@ dbt プロジェクト、データベースのセットアップが完了し、�
 
 ### Fact tables 
 
-> **infomation**
+> **Note**
 > 
 > ファクトテーブルとは、現実世界におけるビジネスプロセスを表すテーブルのことです。
 > ファクトテーブルの例としては、次のようなビジネスイベントを表しています：
@@ -386,14 +386,16 @@ dbt プロジェクト、データベースのセットアップが完了し、�
 - `sales.salesorderheader` テーブルには、注文で使用されたクレジットカード、配送先住所、および顧客に関する情報が含まれています。このテーブルの各レコードは、1つまたは複数の注文の詳細を含む注文ヘッダを表します。
 - `sales.salesorderdetail` テーブルには、注文された商品に関する情報、注文数量と単価が含まれており、これを利用して収益を算出することができます。このテーブルの各レコードは、1つの注文明細を表します。
 
-<img src="./img/sales-order-header-detail.png" width=600>
+<img src="./img/sales-order-header-detail.png" width=800>
 
 `sales.salesorderheader` と `sales.salesorderdetail` を結合する `fct_sales` というファクトテーブルを定義しましょう。
 ファクトテーブルの各レコード (グレイン（grain、粒を意味する）とも呼ばれる) は、注文の詳細です。
 
+<img src="./img/fct_sales.png" width=600>
+
 ### Dimension tables
 
-> **infomation**
+> **Note**
 > ディメンションテーブルは、ビジネス・プロセス・イベントに関する文脈上の情報、または記述的な情報を表すために使用されます。
 > ディメンションの例を挙げると、以下があります：
 > 
