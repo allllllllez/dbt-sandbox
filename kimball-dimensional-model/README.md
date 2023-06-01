@@ -601,7 +601,69 @@ models:
 $ dbt run && dbt test 
 ```
 
-（`dbt-dimentional-modeling` リポジトリのソースを丸ごと持ってきている場合、ここで `dbt run` するとファクトテーブルもできてしまうので、次のパートで実行する。。。）
+（`dbt-dimentional-modeling` リポジトリのソースを丸ごと持ってきている場合、ここで `dbt run` するとファクトテーブルもできてしまうので、`dim_product` だけ実行する。残りは次のパートで。。。）
+
+<details>
+<summary>出力例</summary>
+
+まずはモデルを run 
+
+```
+$ dbt run --select dim_product
+```
+
+`result`
+
+```log
+09:43:05  Running with dbt=1.5.0
+09:43:05  Unable to do partial parsing because config vars, config profile, or config target have changed
+09:43:08  Found 8 models, 42 tests, 0 snapshots, 0 analyses, 420 macros, 0 operations, 15 seed files, 0 sources, 0 exposures, 0 metrics, 0 groups
+09:43:08
+09:43:09  Concurrency: 12 threads (target='postgres')
+09:43:09
+09:43:09  1 of 1 START sql table model marts.dim_product ................................. [RUN]
+09:43:09  1 of 1 OK created sql table model marts.dim_product ............................ [SELECT 504 in 0.15s]
+09:43:09
+09:43:09  Finished running 1 table model in 0 hours 0 minutes and 0.31 seconds (0.31s).
+09:43:09
+09:43:09  Completed successfully
+09:43:09
+09:43:09  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+```
+
+テストを実行。
+
+```
+$ dbt test --select dim_product
+```
+
+`result`
+
+```log
+10:05:53  Running with dbt=1.5.0
+10:05:55  Found 8 models, 42 tests, 0 snapshots, 0 analyses, 420 macros, 0 operations, 15 seed files, 0 sources, 0 exposures, 0 metrics, 0 groups
+10:05:55
+10:05:55  Concurrency: 12 threads (target='postgres')
+10:05:55
+10:05:56  1 of 5 START test not_null_dim_product_product_key ............................. [RUN]
+10:05:56  2 of 5 START test not_null_dim_product_product_name ............................ [RUN]
+10:05:56  3 of 5 START test not_null_dim_product_productid ............................... [RUN]
+10:05:56  4 of 5 START test unique_dim_product_product_key ............................... [RUN]
+10:05:56  5 of 5 START test unique_dim_product_productid ................................. [RUN]
+10:05:56  4 of 5 PASS unique_dim_product_product_key ..................................... [PASS in 0.12s]
+10:05:56  2 of 5 PASS not_null_dim_product_product_name .................................. [PASS in 0.14s]
+10:05:56  1 of 5 PASS not_null_dim_product_product_key ................................... [PASS in 0.14s]
+10:05:56  3 of 5 PASS not_null_dim_product_productid ..................................... [PASS in 0.14s]
+10:05:56  5 of 5 PASS unique_dim_product_productid ....................................... [PASS in 0.14s]
+10:05:56
+10:05:56  Finished running 5 tests in 0 hours 0 minutes and 0.30 seconds (0.30s).
+10:05:56
+10:05:56  Completed successfully
+10:05:56
+10:05:56  Done. PASS=5 WARN=0 ERROR=0 SKIP=0 TOTAL=5
+```
+
+</details>
 
 これで、ディメンションテーブルを作成するためのすべてのステップが完了しました。
 あとは、先に確認したすべてのディメンションテーブルに対して同じ手順の繰り返しです。
