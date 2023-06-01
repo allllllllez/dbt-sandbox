@@ -1,5 +1,6 @@
 # Building a Kimball dimensional model with dbt <!-- omit in toc -->
 [Building a Kimball dimensional model with dbt _ dbt Developer Blog](https://docs.getdbt.com/blog/kimball-dimensional-model) をやるよ。
+画像は、一部を除いて全て原文から引用したものです。
 
 # 目次 <!-- omit in toc -->
 - [解説](#解説)
@@ -17,8 +18,8 @@
         - [Step 8: Query the tables](#step-8-query-the-tables)
     - [Part 2: Identify the business process](#part-2-identify-the-business-process)
     - [Part 3: Identify the fact and dimension tables](#part-3-identify-the-fact-and-dimension-tables)
-    - [Fact tables](#fact-tables)
-    - [Dimension tables](#dimension-tables)
+        - [Fact tables](#fact-tables)
+        - [Dimension tables](#dimension-tables)
     - [Part 4: Create the dimension tables](#part-4-create-the-dimension-tables)
         - [Step 1: Create model files](#step-1-create-model-files)
         - [Step 2: Fetch data from the upstream tables](#step-2-fetch-data-from-the-upstream-tables)
@@ -68,7 +69,7 @@ Dimentional modeling の目的は、raw データを、ビジネスを表現す�
 ディメンショナルモデリングのメリットを挙げます：
 
 - 分析用のデータモデルがよりシンプルになる： 分析用にdimentional model を使用する際、ファクトテーブルとディメンションテーブル間の結合は、サロゲートキーを使用することで簡単に行うことができ、複雑な結合を行う必要がない
-- Don’t repeat yourself[^1]：ディメンションは、他のファクトテーブルで簡単に再利用でき、労力とコード・ロジックの重複を避けることができます。再利用可能なディメンジョンは、[コンフォームド・ディメンジョン](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/conformed-dimension/)と呼ばれます。
+- Don’t repeat yourself[^1]：ディメンションは、他のファクトテーブルで簡単に再利用でき、労力とコード・ロジックの重複を避けることができます。再利用可能なディメンションは、[コンフォームド・ディメンション](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/conformed-dimension/)と呼ばれます。
 - データ検索の高速化： Dimentional model に対して実行される分析クエリは、結合や集約などのデータ変換がすでに適用されているため、3NFモデルよりも大幅に高速です。
 - 実際のビジネスプロセスとの密接な整合性：ビジネスプロセスとメトリクスは、dimentional model の一部としてモデル化され、計算される。これにより、モデル化されたデータが容易に利用できるようになる
 
@@ -90,9 +91,9 @@ Dimentional modeling の目的は、raw データを、ビジネスを表現す�
 - SQLの基本的な理解
 - dbtの基本的な理解
 
-はい、作りましょう。[^1]
+はい、作りましょう。[^2]
 
-[^1]: ここでは PostgreSQL を使用します
+[^2]: ここでは PostgreSQL を使用します
 
 ```
 $ docker compose up -d --build
@@ -336,29 +337,111 @@ select * from sales.salesorderheader limit 10;
 <!-- TODO めんどくさいので一気に pandas profiling とか実行するやつほしいね -->
 
 
-dbt プロジェクトとデータベースのセットアップが完了したら、次はディメンションモデルに必要なテーブルを特定するパートに移ります。
+dbt プロジェクトとデータベースのセットアップが完了したら、次は dimention model に必要なテーブルを特定するパートに移ります。
 
 ## Part 2: Identify the business process
 
 dbt プロジェクト、データベースのセットアップが完了し、スキーマを覗き見たところで、いよいよビジネスプロセスの特定に入ります。
-ビジネスプロセスの特定は、ビジネスユーザーとの共同作業で行われます。ビジネス目標やビジネスプロセスに関するコンテキストはビジネスユーザーが持っており、それをあなたに教えてくれます。
-<!-- ビジネスユーザーこそが情報を持っており、あなたに教えることができるのですって感じかな？ -->
+ビジネスプロセスの特定は、ビジネスユーザーとの共同作業で行われます。ビジネスユーザーは、ビジネス目標やビジネスプロセスに関するコンテキストを持っており、その情報をあなたに教えることができます。
 
-AdventureWorks の CEOと話して、次のような情報が得られました：
+あなたは、AdventureWorks の CEOと会話して、次の情報を得ました：
 
 > AdventureWorksは自転車を製造し、消費者（B2C）および企業（B2B）に販売しています。
-> 自転車は世界中の顧客に発送されています。この事業のCEOとして、2011年末の1年間の売上高を、以下の内訳で知りたいです：
+> 自転車は世界中の顧客に発送されています。
+> この事業のCEOとして、以下の切り口で、2011年末までの年間売上高を把握したいと考えています：
+> 
 > - 製品カテゴリーとサブカテゴリー
 > - 顧客
 > - 注文状況
 > - 配送先の国、州、都市
 
 ビジネスユーザーから提供された情報に基づいて、あなたは問題のビジネスプロセスが「販売」プロセスであることを特定しました。
-次のパートでは、販売プロセスの Dimentional model を設計します。
+次のパートでは、販売プロセスの dimentional model を設計します。
 
 ## Part 3: Identify the fact and dimension tables 
-## Fact tables 
-## Dimension tables
+
+前編で提供された情報をもとに、AdventureWorks のビジネスにおける販売プロセスを表現する dimentional model を作成し、さらに次の条件でデータを切り分けられるようにしましょう：
+
+- 製品カテゴリーとサブカテゴリー
+- 顧客
+- 注文状況
+- 配送先の国、州、都市
+- 日付（年、月、日）
+
+### Fact tables 
+
+> **infomation**
+> 
+> ファクトテーブルとは、現実世界におけるビジネスプロセスを表すテーブルのことです。
+> ファクトテーブルの例としては、次のようなビジネスイベントを表しています：
+> 
+> - 商品販売
+> - ウェブサイトのクリック
+> - 生産指示票[^3]
+
+[^3]: https://ejje.weblio.jp/content/production+work+order より。いまいちピンとこない。。。
+
+さて、販売スキーマには、注目すべき2つのテーブルがあります。この2つのテーブルは、販売プロセスのファクトテーブルを作成するために使用できます：
+
+- `sales.salesorderheader` テーブルには、注文で使用されたクレジットカード、配送先住所、および顧客に関する情報が含まれています。このテーブルの各レコードは、1つまたは複数の注文の詳細を含む注文ヘッダを表します。
+- `sales.salesorderdetail` テーブルには、注文された商品に関する情報、注文数量と単価が含まれており、これを利用して収益を算出することができます。このテーブルの各レコードは、1つの注文明細を表します。
+
+<img src="./img/sales-order-header-detail.png" width=600>
+
+`sales.salesorderheader` と `sales.salesorderdetail` を結合する `fct_sales` というファクトテーブルを定義しましょう。
+ファクトテーブルの各レコード (グレイン（grain、粒を意味する）とも呼ばれる) は、注文の詳細です。
+
+### Dimension tables
+
+> **infomation**
+> ディメンションテーブルは、ビジネス・プロセス・イベントに関する文脈上の情報、または記述的な情報を表すために使用されます。
+> ディメンションの例を挙げると、以下があります：
+> 
+> - 顧客の詳細：ある注文番号はどの顧客のものですか？
+> - ウェブサイトでのクリック位置の詳細： ユーザーがクリックしたのはどのボタンですか？
+> - 商品の詳細： カートに追加された商品の詳細は？
+
+ビジネスユーザーが答えを得たいビジネス上の質問に基づき、ビジネスプロセスに役立つコンテキスト情報を含むいくつかのテーブルを特定することができます：
+
+- `person.address`
+- `person.countryregion`
+- `production.product`
+- `production.productcategory`
+- `sales.customer`
+- `sales.store`
+- など …
+
+ディメンションテーブルを作成する方法はさまざまです。下図に示すように、既存のリレーションシップを使用することができます。
+
+<img src="./img/snowflake-schema.png" width=800>
+
+このように、ファクトテーブルと結合するディメンションテーブルが、さらにいくつかの（正規化された）ディメンションテーブルと結合するスキーマは「スノーフレークスキーマ」として知られています。
+しかしながら、このモデルでは、dimensional model の利用者は多数の結合を行う必要があります。
+
+その代わりに、結合することでディメンションテーブルを非正規化します。
+
+<img src="./img/star-schema.png" width=400>
+
+これは「スタースキーマ」として知られており、このアプローチにより、dimensional model の利用者が行う必要がある結合を減らすことができます。
+スタースキーマのアプローチを使用して、次のように、ビジネス上の質問に答えるのに役立つ6つのディメンションを特定することができます：
+
+- `im_product` : 製品、製品サブカテゴリ、製品カテゴリを結合したディメンションテーブル
+- `dim_address` : 住所、州、国、地域を結合したディメンションテーブル
+- `dim_customer` : 顧客、個人、店舗を結合したディメンションテーブル
+- `dim_credit_card` : `creditcard` から作成したディメンションテーブル
+- `dim_order_status` : `salesorderheader` から distinct status をとって作成したディメンションテーブル
+- `dim_date` : [dbt_date](https://hub.getdbt.com/calogica/dbt_date/latest/) パッケージを使用して生成された、日付属性を含むディメンションテーブル
+    - 実行日（2023/5/30）時点で、[dbt_date は DuckDB をサポートしていない](https://hub.getdbt.com/calogica/dbt_date/latest/#:~:text=This%20package%20supports%3A)ので注意
+
+<details>
+<summary>リネージ</summary>
+
+<img src="./img/dimension-tables.png" width=400>
+
+</details>
+
+次のパートでは、dbt を使用して、ここで洗い出したファクトテーブルとディメンションテーブルを作成します。
+
 ## Part 4: Create the dimension tables
 ### Step 1: Create model files
 ### Step 2: Fetch data from the upstream tables
