@@ -42,6 +42,7 @@
         - [Step 9: Build dbt models](#step-9-build-dbt-models)
     - [Part 6: Document the dimensional model relationships](#part-6-document-the-dimensional-model-relationships)
     - [Part 7: Consume dimensional model](#part-7-consume-dimensional-model)
+- [Learning resources](#learning-resources)
 
 # 解説
 ## はじめに
@@ -362,7 +363,7 @@ dbt プロジェクト、データベースのセットアップが完了し、�
 
 ## Part 3: Identify the fact and dimension tables 
 
-前編で提供された情報をもとに、AdventureWorks のビジネスにおける販売プロセスを表現する dimensional model を作成し、さらに次の条件でデータを切り分けられるようにしましょう：
+前編で提供された情報をもとに、AdventureWorks のビジネスにおける販売プロセスを表現する dimensional model を作成し、さらに次の条件でデータを slice and dice できるようにしましょう：
 
 - 製品カテゴリーとサブカテゴリー
 - 顧客
@@ -570,7 +571,7 @@ models:
 ### Step 7: Create model documentation and tests
 
 `dim_product.sql` モデルと一緒に、対応する `dim_product.yml` ファイルを入力して、モデルを文書化してテストすることができます。ここでは、サロゲートキーが unique か、製品IDや製品名が null でないか、をチェックさせます。
-`dbt-dimensional-modelling/adventureworks/models/marts/dim_product.yml` をご参照ください。
+サンプルコード `dbt-dimensional-modelling/adventureworks/models/marts/dim_product.yml` をご参照ください。
 
 ```yml
 version: 2
@@ -837,25 +838,402 @@ dbt test --select "marts.dim_*"
 ディメンションテーブルをすべて作成したら、次はファクトテーブル  `fct_sales`  を作成します。
 
 ### Step 1: Create model files
+
+変換コードを格納する新しいdbtモデル・ファイルを作成しましょう。`dbt-dimensional-modelling/aventureworks/models/marts/` の下に、2つのファイルを作成します（こちらもサンプルコードリポジトリに用意されているので、手書き不要）：
+
+- `fct_sales.sql` : このファイルには、SQL変換コードが格納されます。
+- `fct_sales.yml` : このファイルには、`fct_sales` のドキュメントとテストが含まれます。
+
+```
+dbt-dimensional-modelling/adventureworks/models/
+└── marts
+    ├── fct_sales.sql
+    ├── fct_sales.yml
+```
+
 ### Step 2: Fetch data from the upstream tables
+
+ビジネス上の質問に答えるには、`salesorderheader` と `salesorderdetail` の両方のカラムが必要です。それを`fct_sales.sql` に反映させましょう：
+
+```sql
+with stg_salesorderheader as (
+    select
+        salesorderid,
+        customerid,
+        creditcardid,
+        shiptoaddressid,
+        status as order_status,
+        cast(orderdate as date) as orderdate
+    from {{ ref('salesorderheader') }}
+),
+
+stg_salesorderdetail as (
+    select
+        salesorderid,
+        salesorderdetailid,
+        productid,
+        orderqty,
+        unitprice,
+        unitprice * orderqty as revenue
+    from {{ ref('salesorderdetail') }}
+)
+
+... 
+```
+
 ### Step 3: Perform joins
+
+`fct_sales` テーブルのグレインは、`salesorderdetail` テーブルの1レコードです。1レコードに `salesorderheader` 内での商品の数量も記述したいので、その粒度を実現するために、`salesorderheader` と `salesorderdetail` の間で join を行います。
+
+```sql
+... 
+
+select
+    ... 
+from stg_salesorderdetail
+inner join stg_salesorderheader on stg_salesorderdetail.salesorderid = stg_salesorderheader.salesorderid
+```
+
 ### Step 4: Create the surrogate key
+
+次に、ファクトテーブルの各行を一意に識別するためのサロゲートキーを作成します。`fct_sales` テーブルの各行は、`salesorderid` と `salesorderdetailid` によって一意に識別できます。このため、`generate_surrogate_key()` マクロで両方のカラムを使用します。
+
+```sql
+...
+
+select
+    {{ dbt_utils.generate_surrogate_key(['stg_salesorderdetail.salesorderid', 'salesorderdetailid']) }} as sales_key,
+    ...
+from stg_salesorderdetail
+inner join stg_salesorderheader on stg_salesorderdetail.salesorderid = stg_salesorderheader.salesorderid
+```
+
 ### Step 5: Select fact table columns
+
+これで、先に特定したビジネス上の質問に答えるのに役立つファクトテーブル列を選択できます。収益の金額を計算できるようにしたいので、`unitprice * orderqty as revenue` で収益を算出し、販売注文詳細ごとの収益列を追加します。
+
+```sql
+...
+
+select
+    {{ dbt_utils.generate_surrogate_key(['stg_salesorderdetail.salesorderid', 'salesorderdetailid']) }} as sales_key,
+    stg_salesorderdetail.salesorderid,
+    stg_salesorderdetail.salesorderdetailid,
+    stg_salesorderdetail.unitprice,
+    stg_salesorderdetail.orderqty,
+    stg_salesorderdetail.revenue
+from stg_salesorderdetail
+inner join stg_salesorderheader on stg_salesorderdetail.salesorderid = stg_salesorderheader.salesorderid
+```
+
 ### Step 6: Create foreign surrogate keys
+
+先のステップで作成したディメンションテーブルに対して、ファクトテーブルを slice and dice できるようにしたいと考えています。そこで、ファクトテーブルをディメンションテーブルに結合しなおすために使用する外部サロゲートキーを作成する必要があります。
+
+これは、ディメンジョンテーブルでサロゲートキーを生成するときに使用したのと同じく、一意の ID 列に `generate_surrogate_key()` マクロを適用することで実現できます。
+
+```sql
+...
+
+select
+    {{ dbt_utils.generate_surrogate_key(['stg_salesorderdetail.salesorderid', 'salesorderdetailid']) }} as sales_key,
+    {{ dbt_utils.generate_surrogate_key(['productid']) }} as product_key,
+    {{ dbt_utils.generate_surrogate_key(['customerid']) }} as customer_key,
+    {{ dbt_utils.generate_surrogate_key(['creditcardid']) }} as creditcard_key,
+    {{ dbt_utils.generate_surrogate_key(['shiptoaddressid']) }} as ship_address_key,
+    {{ dbt_utils.generate_surrogate_key(['order_status']) }} as order_status_key,
+    {{ dbt_utils.generate_surrogate_key(['orderdate']) }} as order_date_key,
+    stg_salesorderdetail.salesorderid,
+    stg_salesorderdetail.salesorderdetailid,
+    stg_salesorderdetail.unitprice,
+    stg_salesorderdetail.orderqty,
+    stg_salesorderdetail.revenue
+from stg_salesorderdetail
+inner join stg_salesorderheader on stg_salesorderdetail.salesorderid = stg_salesorderheader.salesorderid
+```
+
 ### Step 7: Choose a materialization type
+
+先のステップと同じく、dbt がサポートする実体化方法から選択します：
+
+- View
+- Table
+- Incremental
+
+ファクトテーブルは、データ量の大きさに応じて、Incremental または Table として実体化されるのが一般的です。[経験則](https://docs.getdbt.com/docs/build/incremental-models#when-should-i-use-an-incremental-model)では、数百万または数十億行を変換する場合は、Incremental を使用し始める必要があります。
+この例では、シンプルにするため、Table を選択します。
+
 ### Step 8: Create model documentation and tests
+
+`fct_sales.sql` モデルと一緒に、対応する `fct_sales.yml` ファイルを作成して、モデルをドキュメント化してテストすることができます。
+サンプルコード `dbt-dimensional-modelling/adventureworks/models/marts/fct_sales.yml` をご参照ください。
+
+
+```yml
+version: 2
+
+models:
+  - name: fct_sales
+    columns:
+
+      - name: sales_key
+        description: The surrogate key of the fct sales
+        tests:
+          - not_null
+          - unique
+
+      - name: product_key
+        description: The foreign key of the product
+        tests:
+          - not_null
+
+      - name: customer_key
+        description: The foreign key of the customer
+        tests:
+          - not_null 
+      
+      ... 
+
+      - name: orderqty
+        description: The quantity of the product 
+        tests:
+          - not_null
+
+      - name: revenue
+        description: The revenue obtained by multiplying unitprice and orderqty
+```
+
 ### Step 9: Build dbt models
 
+`dbt run` と `dbt test` コマンドを実行して、dbt モデルを実行し、テストを行います：
+
+```
+dbt run && dbt test 
+```
 
 <details>
 <summary>出力例</summary>
 
 ```log
-
+root@docker-desktop:/usr/app/dbt/dbt-dimensional-modelling/adventureworks# dbt run && dbt test
+12:28:04  Running with dbt=1.5.0
+12:28:06  Found 8 models, 42 tests, 0 snapshots, 0 analyses, 420 macros, 0 operations, 15 seed files, 0 sources, 0 exposures, 0 metrics, 0 groups
+12:28:06
+12:28:06  Concurrency: 12 threads (target='postgres')
+12:28:06
+12:28:06  1 of 8 START sql table model marts.dim_address ................................. [RUN]
+12:28:06  2 of 8 START sql table model marts.dim_credit_card ............................. [RUN]
+12:28:06  3 of 8 START sql table model marts.dim_customer ................................ [RUN]
+12:28:06  4 of 8 START sql table model marts.dim_date .................................... [RUN]
+12:28:06  5 of 8 START sql table model marts.dim_order_status ............................ [RUN]
+12:28:06  6 of 8 START sql table model marts.dim_product ................................. [RUN]
+12:28:06  7 of 8 START sql table model marts.fct_sales ................................... [RUN]
+12:28:06  1 of 8 OK created sql table model marts.dim_address ............................ [SELECT 1675 in 0.38s]
+12:28:07  4 of 8 OK created sql table model marts.dim_date ............................... [SELECT 731 in 0.38s]
+12:28:07  2 of 8 OK created sql table model marts.dim_credit_card ........................ [SELECT 1316 in 0.38s]
+12:28:07  6 of 8 OK created sql table model marts.dim_product ............................ [SELECT 504 in 0.38s]
+12:28:07  5 of 8 OK created sql table model marts.dim_order_status ....................... [SELECT 1 in 0.38s]
+12:28:07  3 of 8 OK created sql table model marts.dim_customer ........................... [SELECT 19820 in 0.39s]
+12:28:07  7 of 8 OK created sql table model marts.fct_sales .............................. [SELECT 5675 in 0.39s]
+12:28:07  8 of 8 START sql table model marts.obt_sales ................................... [RUN]
+12:28:07  8 of 8 OK created sql table model marts.obt_sales .............................. [SELECT 5675 in 0.77s]
+12:28:07
+12:28:07  Finished running 8 table models in 0 hours 0 minutes and 1.37 seconds (1.37s).
+12:28:07
+12:28:07  Completed successfully
+12:28:07
+12:28:07  Done. PASS=8 WARN=0 ERROR=0 SKIP=0 TOTAL=8
+12:28:10  Running with dbt=1.5.0
+12:28:12  Found 8 models, 42 tests, 0 snapshots, 0 analyses, 420 macros, 0 operations, 15 seed files, 0 sources, 0 exposures, 0 metrics, 0 groups
+12:28:12
+12:28:12  Concurrency: 12 threads (target='postgres')
+12:28:12
+12:28:12  1 of 42 START test not_null_dim_address_address_key ............................ [RUN]
+12:28:12  2 of 42 START test not_null_dim_address_addressid .............................. [RUN]
+12:28:12  3 of 42 START test not_null_dim_credit_card_cardtype ........................... [RUN]
+12:28:12  4 of 42 START test not_null_dim_credit_card_creditcard_key ..................... [RUN]
+12:28:12  5 of 42 START test not_null_dim_credit_card_creditcardid ....................... [RUN]
+12:28:12  6 of 42 START test not_null_dim_customer_customer_key .......................... [RUN]
+12:28:12  7 of 42 START test not_null_dim_customer_customerid ............................ [RUN]
+12:28:12  8 of 42 START test not_null_dim_date_date_day .................................. [RUN]
+12:28:12  9 of 42 START test not_null_dim_date_date_key .................................. [RUN]
+12:28:12  10 of 42 START test not_null_dim_order_status_order_status ..................... [RUN]
+12:28:12  11 of 42 START test not_null_dim_order_status_order_status_key ................. [RUN]
+12:28:12  12 of 42 START test not_null_dim_product_product_key ........................... [RUN]
+12:28:12  1 of 42 PASS not_null_dim_address_address_key .................................. [PASS in 0.29s]
+12:28:12  3 of 42 PASS not_null_dim_credit_card_cardtype ................................. [PASS in 0.28s]
+12:28:12  6 of 42 PASS not_null_dim_customer_customer_key ................................ [PASS in 0.29s]
+12:28:12  5 of 42 PASS not_null_dim_credit_card_creditcardid ............................. [PASS in 0.29s]
+12:28:12  2 of 42 PASS not_null_dim_address_addressid .................................... [PASS in 0.29s]
+12:28:12  9 of 42 PASS not_null_dim_date_date_key ........................................ [PASS in 0.29s]
+12:28:12  8 of 42 PASS not_null_dim_date_date_day ........................................ [PASS in 0.29s]
+12:28:12  11 of 42 PASS not_null_dim_order_status_order_status_key ....................... [PASS in 0.29s]
+12:28:12  7 of 42 PASS not_null_dim_customer_customerid .................................. [PASS in 0.30s]
+12:28:12  4 of 42 PASS not_null_dim_credit_card_creditcard_key ........................... [PASS in 0.30s]
+12:28:12  10 of 42 PASS not_null_dim_order_status_order_status ........................... [PASS in 0.30s]
+12:28:12  12 of 42 PASS not_null_dim_product_product_key ................................. [PASS in 0.31s]
+12:28:12  13 of 42 START test not_null_dim_product_product_name .......................... [RUN]
+12:28:12  14 of 42 START test not_null_dim_product_productid ............................. [RUN]
+12:28:12  15 of 42 START test not_null_fct_sales_customer_key ............................ [RUN]
+12:28:12  16 of 42 START test not_null_fct_sales_order_date_key .......................... [RUN]
+12:28:12  17 of 42 START test not_null_fct_sales_order_status_key ........................ [RUN]
+12:28:12  18 of 42 START test not_null_fct_sales_orderqty ................................ [RUN]
+12:28:12  19 of 42 START test not_null_fct_sales_product_key ............................. [RUN]
+12:28:12  20 of 42 START test not_null_fct_sales_sales_key ............................... [RUN]
+12:28:12  21 of 42 START test not_null_fct_sales_salesorderdetailid ...................... [RUN]
+12:28:12  22 of 42 START test not_null_fct_sales_salesorderid ............................ [RUN]
+12:28:12  23 of 42 START test not_null_fct_sales_ship_address_key ........................ [RUN]
+12:28:12  24 of 42 START test not_null_fct_sales_unitprice ............................... [RUN]
+12:28:13  14 of 42 PASS not_null_dim_product_productid ................................... [PASS in 0.27s]
+12:28:13  13 of 42 PASS not_null_dim_product_product_name ................................ [PASS in 0.28s]
+12:28:13  15 of 42 PASS not_null_fct_sales_customer_key .................................. [PASS in 0.29s]
+12:28:13  17 of 42 PASS not_null_fct_sales_order_status_key .............................. [PASS in 0.29s]
+12:28:13  16 of 42 PASS not_null_fct_sales_order_date_key ................................ [PASS in 0.29s]
+12:28:13  18 of 42 PASS not_null_fct_sales_orderqty ...................................... [PASS in 0.29s]
+12:28:13  20 of 42 PASS not_null_fct_sales_sales_key ..................................... [PASS in 0.29s]
+12:28:13  19 of 42 PASS not_null_fct_sales_product_key ................................... [PASS in 0.29s]
+12:28:13  21 of 42 PASS not_null_fct_sales_salesorderdetailid ............................ [PASS in 0.29s]
+12:28:13  22 of 42 PASS not_null_fct_sales_salesorderid .................................. [PASS in 0.29s]
+12:28:13  23 of 42 PASS not_null_fct_sales_ship_address_key .............................. [PASS in 0.28s]
+12:28:13  25 of 42 START test not_null_obt_sales_orderqty ................................ [RUN]
+12:28:13  24 of 42 PASS not_null_fct_sales_unitprice ..................................... [PASS in 0.27s]
+12:28:13  26 of 42 START test not_null_obt_sales_sales_key ............................... [RUN]
+12:28:13  27 of 42 START test not_null_obt_sales_salesorderdetailid ...................... [RUN]
+12:28:13  28 of 42 START test not_null_obt_sales_salesorderid ............................ [RUN]
+12:28:13  29 of 42 START test not_null_obt_sales_unitprice ............................... [RUN]
+12:28:13  30 of 42 START test unique_dim_address_address_key ............................. [RUN]
+12:28:13  31 of 42 START test unique_dim_address_addressid ............................... [RUN]
+12:28:13  32 of 42 START test unique_dim_credit_card_creditcardid ........................ [RUN]
+12:28:13  33 of 42 START test unique_dim_customer_customer_key ........................... [RUN]
+12:28:13  34 of 42 START test unique_dim_customer_customerid ............................. [RUN]
+12:28:13  35 of 42 START test unique_dim_date_date_day ................................... [RUN]
+12:28:13  36 of 42 START test unique_dim_date_date_key ................................... [RUN]
+12:28:13  25 of 42 PASS not_null_obt_sales_orderqty ...................................... [PASS in 0.30s]
+12:28:13  26 of 42 PASS not_null_obt_sales_sales_key ..................................... [PASS in 0.30s]
+12:28:13  28 of 42 PASS not_null_obt_sales_salesorderid .................................. [PASS in 0.28s]
+12:28:13  27 of 42 PASS not_null_obt_sales_salesorderdetailid ............................ [PASS in 0.29s]
+12:28:13  29 of 42 PASS not_null_obt_sales_unitprice ..................................... [PASS in 0.28s]
+12:28:13  30 of 42 PASS unique_dim_address_address_key ................................... [PASS in 0.28s]
+12:28:13  31 of 42 PASS unique_dim_address_addressid ..................................... [PASS in 0.28s]
+12:28:13  32 of 42 PASS unique_dim_credit_card_creditcardid .............................. [PASS in 0.28s]
+12:28:13  35 of 42 PASS unique_dim_date_date_day ......................................... [PASS in 0.27s]
+12:28:13  33 of 42 PASS unique_dim_customer_customer_key ................................. [PASS in 0.28s]
+12:28:13  34 of 42 PASS unique_dim_customer_customerid ................................... [PASS in 0.29s]
+12:28:13  37 of 42 START test unique_dim_order_status_order_status ....................... [RUN]
+12:28:13  38 of 42 START test unique_dim_order_status_order_status_key ................... [RUN]
+12:28:13  36 of 42 PASS unique_dim_date_date_key ......................................... [PASS in 0.29s]
+12:28:13  39 of 42 START test unique_dim_product_product_key ............................. [RUN]
+12:28:13  40 of 42 START test unique_dim_product_productid ............................... [RUN]
+12:28:13  41 of 42 START test unique_fct_sales_sales_key ................................. [RUN]
+12:28:13  42 of 42 START test unique_obt_sales_sales_key ................................. [RUN]
+12:28:13  37 of 42 PASS unique_dim_order_status_order_status ............................. [PASS in 0.14s]
+12:28:13  38 of 42 PASS unique_dim_order_status_order_status_key ......................... [PASS in 0.14s]
+12:28:13  39 of 42 PASS unique_dim_product_product_key ................................... [PASS in 0.14s]
+12:28:13  40 of 42 PASS unique_dim_product_productid ..................................... [PASS in 0.14s]
+12:28:13  41 of 42 PASS unique_fct_sales_sales_key ....................................... [PASS in 0.15s]
+12:28:13  42 of 42 PASS unique_obt_sales_sales_key ....................................... [PASS in 0.15s]
+12:28:13
+12:28:13  Finished running 42 tests in 0 hours 0 minutes and 1.37 seconds (1.37s).
+12:28:13
+12:28:13  Completed successfully
+12:28:13
+12:28:13  Done. PASS=42 WARN=0 ERROR=0 SKIP=0 TOTAL=42
 ```
 
 </details>
 
+最初のファクトテーブルとディメンションテーブルの作成に成功しました！これで dimentional model は完成です! 🎉
+
 ## Part 6: Document the dimensional model relationships
+
+dimentional model の利用者がテーブル間の関係を理解しやすくするために、ERD（Entity Relationship Diagram）を作成しましょう。
+
+<img src="./img/target-schema.png" width=600>
+<!-- 。。。手書きですか？ -->
+
 ## Part 7: Consume dimensional model
-Learning resources
+
+最後に、データウェアハウスを Tableau、Power BI、Looker などのビジネスインテリジェンス（BI）ツールに接続して、ディメンショナルモデルを利用することができます。
+
+最近のBIツールには、テーブル間の関係をサポートするセマンティックレイヤーが組み込まれており、追加のデータ変換なしにディメンションモデルを直接利用する場合に必要となります。
+
+例えばLookerでは、LookMLを使用して関係を定義することができます：
+
+```lookml
+explore: fct_order {
+  join: dim_user {
+    sql_on: ${fct_order.user_key} = ${dim_user.user_key} ;;
+    relationship: many_to_one
+  }
+}
+```
+
+BIツールにリレーションシップをサポートするセマンティックレイヤーがない場合は、ファクトテーブルとそのすべてのディメンションテーブルを結合するOBT（One Big Table、ワイドテーブルとか大福帳テーブルと同じ意味）を作成して、リレーションシップを反映する必要があります。
+ここでは、OBT のモデル `obt_sales` を作成してみます。（サンプルコードでは `dbt-dimensional-modelling/adventureworks/models/marts/obt_sales.*` に作成済み）
+
+<details>
+<summary>クエリ</summary>
+
+```sql
+with f_sales as (
+    select * from {{ ref('fct_sales') }}
+),
+
+d_customer as (
+    select * from {{ ref('dim_customer') }}
+),
+
+d_credit_card as (
+    select * from {{ ref('dim_credit_card') }}
+),
+
+d_address as (
+    select * from {{ ref('dim_address') }}
+),
+
+d_order_status as (
+    select * from {{ ref('dim_order_status') }}
+),
+
+d_product as (
+    select * from {{ ref('dim_product') }}
+),
+
+d_date as (
+    select * from {{ ref('dim_date') }}
+)
+
+select
+    {{ dbt_utils.star(from=ref('fct_sales'), relation_alias='f_sales', except=[
+        "product_key", "customer_key", "creditcard_key", "ship_address_key", "order_status_key", "order_date_key"
+    ]) }},
+    {{ dbt_utils.star(from=ref('dim_product'), relation_alias='d_product', except=["product_key"]) }},
+    {{ dbt_utils.star(from=ref('dim_customer'), relation_alias='d_customer', except=["customer_key"]) }},
+    {{ dbt_utils.star(from=ref('dim_credit_card'), relation_alias='d_credit_card', except=["creditcard_key"]) }},
+    {{ dbt_utils.star(from=ref('dim_address'), relation_alias='d_address', except=["address_key"]) }},
+    {{ dbt_utils.star(from=ref('dim_order_status'), relation_alias='d_order_status', except=["order_status_key"]) }},
+    {{ dbt_utils.star(from=ref('dim_date'), relation_alias='d_date', except=["date_key"]) }}
+from f_sales
+left join d_product on f_sales.product_key = d_product.product_key
+left join d_customer on f_sales.customer_key = d_customer.customer_key
+left join d_credit_card on f_sales.creditcard_key = d_credit_card.creditcard_key
+left join d_address on f_sales.ship_address_key = d_address.address_key
+left join d_order_status on f_sales.order_status_key = d_order_status.order_status_key
+left join d_date on f_sales.order_date_key = d_date.date_key
+```
+
+</details>
+
+OBT も含めた全体の DAG はこのようになります。
+
+<img src="./img/dbt-dag.png" width=400>
+
+おめでとうございます、このチュートリアルはこれで終わりです！
+もっと詳しく知りたい方は、以下のディメンショナルモデリングに関する学習リソースを参照してください。
+
+# Learning resources
+
+- [Kimball group learning resources](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/)
+- [The Data Warehouse toolkit book](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/books/data-warehouse-dw-toolkit/)
+- [dbt discourse on whether dimensional modeling is still relevant](https://discourse.getdbt.com/t/is-kimball-dimensional-modeling-still-relevant-in-a-modern-data-warehouse/225)
+- [dbt glossary on dimensional modeling](https://docs.getdbt.com/terms/dimensional-modeling)
