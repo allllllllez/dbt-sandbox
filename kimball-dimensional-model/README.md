@@ -44,6 +44,7 @@
 
 # 解説
 ## はじめに
+<!-- TODO Dimentional modeling と書いたり ディ面書なるモデリングと書いたりしている 統一したい -->
 Dimentional modeling はデータモデリング手法（※）の一つで、分析用に最も広く採用されている手法です。
 にもかかわらず、世の中には dbt を使って dimentional modeling を行うための資料が足りていません。。。つらいね。。。というわけで、このチュートリアルで dimentional modeling の決定版ガイドを提供したいと思います。
 
@@ -181,7 +182,7 @@ dbt-postgres @ git+https://github.com/dbt-labs/dbt-core@dafb6aeb9338c3703f34cf2d
 
 ### Step 4: Setup dbt profile
 
-dbtプロファイル（`dbt-dimensional-modelling/aventureworks/profiles.yml` を参照）は、事前に設定済みです。
+dbtプロファイル（`dbt-dimensional-modelling/adventureworks/profiles.yml` を参照）は、事前に設定済みです。
 使用するデータベースの認証情報に合わせて、設定を確認・変更しましょう。
 
 ```yml
@@ -214,7 +215,7 @@ adventureworks:
 dbt deps
 ```
 
-（`dbt-dimensional-modelling/aventureworks/pachages.yml` を見ての通り、今回使用するのは `dbt_utils` のみです）
+（`dbt-dimensional-modelling/adventureworks/pachages.yml` を見ての通り、今回使用するのは `dbt_utils` のみです）
 
 <details>
 <summary>実行例</summary>
@@ -236,7 +237,7 @@ Update your versions in packages.yml, then run dbt deps
 
 ### Step 6: Seed your database
 
-[dbt seeds](https://docs.getdbt.com/docs/build/seeds) を使用して、今回使用する AdventureWorks （`dbt-dimensional-modelling/aventureworks/seeds/*` を参照）データを、使用するデータベースに追加していきます：
+[dbt seeds](https://docs.getdbt.com/docs/build/seeds) を使用して、今回使用する AdventureWorks （`dbt-dimensional-modelling/adventureworks/seeds/*` を参照）データを、使用するデータベースに追加していきます：
 
 ```
 # seed duckdb # 今回は実行しないよ
@@ -445,14 +446,167 @@ dbt プロジェクト、データベースのセットアップが完了し、�
 次のパートでは、dbt を使用して、ここで洗い出したファクトテーブルとディメンションテーブルを作成します。
 
 ## Part 4: Create the dimension tables
+
+まず、製品カテゴリのディメンションテーブル `dim_product` を作成しましょう。他のディメンションテーブルも、これから説明するのと同じ手順で作成します。
+
 ### Step 1: Create model files
+
+変換コードを格納する新しい dbt モデルファイルを作成しましょう。`dbt-dimensional-modelling/adventureworks/models/marts/` の下に、2つのファイルを作成します（サンプルコードリポジトリに用意されているので、手書き不要です）：
+
+- `dim_product.sql` : このファイルには、SQL変換コードが含まれます。
+- `dim_product.yml` : このファイルには、`dim_product` のドキュメントとテストが含まれます。
+
+```
+dbt-dimensional-modelling/adventureworks/models/
+└── marts
+    ├── dim_product.sql
+    ├── dim_product.yml
+```
+
 ### Step 2: Fetch data from the upstream tables
+
+`dbt-dimensional-modelling/amodels/marts/dim_product.sql` では、Common Table Expressions（CTE）を使って、上流のテーブルからデータを選択します。
+
+```sql
+with stg_product as (
+    select *
+    from {{ ref('product') }}
+),
+
+stg_product_subcategory as (
+    select *
+    from {{ ref('productsubcategory') }}
+),
+
+stg_product_category as (
+    select *
+    from {{ ref('productcategory') }}
+)
+
+... 
+```
+
+[`ref()`](https://docs.getdbt.com/reference/dbt-jinja-functions/ref) 関数で上流のテーブルを参照し、依存関係のDAG（Directed Acyclic Graph）を作成します。
+<!-- （`ref()` で指定するモデルはどこから来たの、と思ったときは seeds を見よう？あってんのかな） -->
+
 ### Step 3: Perform the joins
+
+`dim_product.sql` の次の段では、適切な結合キーを使用して、CTE テーブル間の結合を実行します。
+
+```sql
+... 
+select
+    {{ dbt_utils.generate_surrogate_key(['stg_product.productid']) }} as product_key,
+    ...
+
+from stg_product
+left join stg_product_subcategory on stg_product.productsubcategoryid = stg_product_subcategory.productsubcategoryid
+left join stg_product_category on stg_product_subcategory.productcategoryid = stg_product_category.productcategoryid
+```
+
+`generate_surrogate_key()` の説明は、次のステップで。
+
 ### Step 4: Create the surrogate key
+
+> **Note**
+> [Surrogate key](https://www.kimballgroup.com/1998/05/surrogate-keys/)は、ディメンションモデルの利用者に、ファクトテーブルとディメンションテーブルを結合するための使いやすいキーを提供するためのものです。
+> 基盤となるビジネス・コンテキストを理解せずとも、サロゲートキーを合わせることだけ考えれば、テーブルを結合できます。
+
+サロゲートキーを作成するには、いくつかのアプローチがあります：
+
+- Hashing surrogate key：テーブルの一意なキーをハッシュすることで構築されるサロゲートキー（例： `md5(key_1, key_2, key_3)` ）
+- Incrementing surrogate key：常にインクリメントされる数値を使用して構築されるサロゲートキー（例：`row_number()`）
+- Concatenating surrogate key：固有キーのカラムを連結して作成するサロゲートキー (例: `concat(key_1, key_2, key_3)` )
+
+ここでは、ディメンションテーブルで一意なキー列に対してハッシュを実行するという、間違いなく最も簡単なアプローチを使用します。この方法は、後でファクトテーブルの Surrogate key を生成する際に、ディメンションテーブルとの結合を実行する手間を省くことができます。
+Surrogate key を生成するには、dbt_utils パッケージで提供されている [generate_surrogate_key()](https://docs.getdbt.com/blog/sql-surrogate-keys) という dbt マクロを使用します。このマクロは、データベースの適切なハッシュ関数を使用して、列のリストからサロゲートキーを生成します (例: `md5()`、`hash()`等)。
+
 ### Step 5: Select dimension table columns
+
+ディメンションテーブルの列を選択して、後でファクトテーブルと組み合わせて使用できるようにします。ここでは、先に特定したビジネス上の質問に答えるのに役立つ列を選択します。
+
+```sql
+...
+select
+    {{ dbt_utils.generate_surrogate_key(['stg_product.productid']) }} as product_key,
+    stg_product.productid,
+    stg_product.name as product_name,
+    stg_product.productnumber,
+    stg_product.color,
+    stg_product.class,
+    stg_product_subcategory.name as product_subcategory_name,
+    stg_product_category.name as product_category_name
+from stg_product
+left join stg_product_subcategory on stg_product.productsubcategoryid = stg_product_subcategory.productsubcategoryid
+left join stg_product_category on stg_product_subcategory.productcategoryid = stg_product_category.productcategoryid
+```
+
+これで、製品カテゴリのディメンションテーブル `dim_product` を集計するクエリは完成です！
+（サロゲートキーをくっつけただけですけどね、正規化されたテーブルがソースだとあるある）
+
 ### Step 6: Choose a materialization type
+
+モデルを実体化する方針を[マテリアライズ](https://docs.getdbt.com/docs/build/materializations)といいます。
+dbt がサポートする以下のマテリアライゼーションタイプの中から選択します[^4]：
+
+[^4]: Efemeral はテーブル/ビューを作成するものでなく、CTE を定義するものなので、選択しない
+
+- View
+- Table
+- Incremental
+
+通常、ディメンションテーブルのデータ量はそれほど大きくないため、ディメンションテーブルはテーブルまたはビューとして実体化するのが一般的です。
+この例ではテーブルに実体化します。`dbt-dimensional-modelling/adventureworks/dbt_project.yml` で `marts` スキーマにある全てのディメンションモデルに対して、マテリアライゼーションタイプをテーブルとします。
+
+```yml
+models:
+  adventureworks:
+    marts:
+      +materialized: table
+      +schema: marts
+```
+
 ### Step 7: Create model documentation and tests
+
+`dim_product.sql` モデルと一緒に、対応する `dim_product.yml` ファイルを入力して、モデルを文書化してテストすることができます。ここでは、サロゲートキーが unique か、製品IDや製品名が null でないか、をチェックさせます。
+`dbt-dimensional-modelling/adventureworks/models/marts/dim_product.yml` をご参照ください。
+
+```yml
+version: 2
+
+models:
+  - name: dim_product
+    columns:
+      - name: product_key 
+        description: The surrogate key of the product
+        tests:
+          - not_null
+          - unique
+      - name: productid 
+        description: The natural key of the product
+        tests:
+          - not_null
+          - unique
+      - name: product_name 
+        description: The product name
+        tests:
+          - not_null
+```
+
 ### Step 8: Build dbt models
+
+`dbt run` と `dbt test` コマンドを実行すると、dbt モデルの実行とモデルのテストができます：
+
+```
+$ dbt run && dbt test 
+```
+
+（`dbt-dimentional-modeling` リポジトリのソースを丸ごと持ってきている場合、ここで `dbt run` するとファクトテーブルもできてしまうので、次のパートで実行する。。。）
+
+これで、ディメンションテーブルを作成するためのすべてのステップが完了しました。
+あとは、先に確認したすべてのディメンションテーブルに対して同じ手順の繰り返しです。
+次のパートに進む前に、すべてのディメンジョンテーブルを作成することを確認してください。
+
 ## Part 5: Create the fact table
 ### Step 1: Create model files
 ### Step 2: Fetch data from the upstream tables
@@ -463,6 +617,17 @@ dbt プロジェクト、データベースのセットアップが完了し、�
 ### Step 7: Choose a materialization type
 ### Step 8: Create model documentation and tests
 ### Step 9: Build dbt models
+
+
+<details>
+<summary>出力例</summary>
+
+```log
+
+```
+
+</details>
+
 ## Part 6: Document the dimensional model relationships
 ## Part 7: Consume dimensional model
 Learning resources
