@@ -50,7 +50,7 @@
 dimensional modeling はデータモデリング手法（※）の一つで、分析用に最も広く採用されている手法です。
 にもかかわらず、世の中には dbt を使って dimensional modeling を行うための資料が足りていません。。。つらいね。。。というわけで、このチュートリアルで dimensional modeling の決定版ガイドを提供したいと思います。
 
-（※）その他のデータモデリング手法には、Data Vault (DV)、Third Normal Form (3NF)、One Big Table (OBT) などがあります。[元記事より拝借](https://docs.getdbt.com/img/blog/2023-04-18-building-a-kimball-dimensional-model-with-dbt/data-modelling.png)：
+（※）その他のデータモデリング手法には、Data Vault (DV)、Third Normal Form (3NF)、One Big Table (OBT) などがあります。
 
 <img src="./img/data-modelling.png" width=800 title="Data modeling techniques on a normalization vs denormalization scale">
 
