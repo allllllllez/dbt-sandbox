@@ -5,7 +5,7 @@
 # 目次 <!-- omit in toc -->
 - [解説](#解説)
     - [はじめに](#はじめに)
-    - [Dimentional modeling とは](#dimentional-modeling-とは)
+    - [dimensional modeling とは](#dimensional-modeling-とは)
     - [準備](#準備)
     - [Part 1: Setup dbt project and database](#part-1-setup-dbt-project-and-database)
         - [Step 1: Before you get started](#step-1-before-you-get-started)
@@ -29,6 +29,7 @@
         - [Step 6: Choose a materialization type](#step-6-choose-a-materialization-type)
         - [Step 7: Create model documentation and tests](#step-7-create-model-documentation-and-tests)
         - [Step 8: Build dbt models](#step-8-build-dbt-models)
+        - [Step おまけ: Other dimension tables](#step-おまけ-other-dimension-tables)
     - [Part 5: Create the fact table](#part-5-create-the-fact-table)
         - [Step 1: Create model files](#step-1-create-model-files-1)
         - [Step 2: Fetch data from the upstream tables](#step-2-fetch-data-from-the-upstream-tables-1)
@@ -44,9 +45,9 @@
 
 # 解説
 ## はじめに
-<!-- TODO Dimentional modeling と書いたり ディ面書なるモデリングと書いたりしている 統一したい -->
-Dimentional modeling はデータモデリング手法（※）の一つで、分析用に最も広く採用されている手法です。
-にもかかわらず、世の中には dbt を使って dimentional modeling を行うための資料が足りていません。。。つらいね。。。というわけで、このチュートリアルで dimentional modeling の決定版ガイドを提供したいと思います。
+<!-- TODO dimensional modeling と書いたり ディ面書なるモデリングと書いたりしている 統一したい -->
+dimensional modeling はデータモデリング手法（※）の一つで、分析用に最も広く採用されている手法です。
+にもかかわらず、世の中には dbt を使って dimensional modeling を行うための資料が足りていません。。。つらいね。。。というわけで、このチュートリアルで dimensional modeling の決定版ガイドを提供したいと思います。
 
 （※）その他のデータモデリング手法には、Data Vault (DV)、Third Normal Form (3NF)、One Big Table (OBT) などがあります。[元記事より拝借](https://docs.getdbt.com/img/blog/2023-04-18-building-a-kimball-dimensional-model-with-dbt/data-modelling.png)：
 
@@ -54,29 +55,29 @@ Dimentional modeling はデータモデリング手法（※）の一つで、�
 
 このチュートリアルを完了すると、次のことができるようになります。
 
-- dimentional modeling の概念を理解する
+- dimensional modeling の概念を理解する
 - モック dbt プロジェクトとデータベースをセットアップする
 - モデル化するビジネス プロセスを特定する
 - ファクト テーブルとディメンション テーブルを特定する
 - ディメンション テーブルを作成する
 - ファクト テーブルを作成する
-- dimentional modeling のリレーションをドキュメント化する
-- dimentional modeling を使用する
+- dimensional modeling のリレーションをドキュメント化する
+- dimensional modeling を使用する
 
-## Dimentional modeling とは
-Dimentional modeling は、1996年にRalph Kimball氏が著書「The Data Warehouse Toolkit」で紹介した手法です。
-Dimentional modeling の目的は、raw データを、ビジネスを表現するファクトテーブルとディメンションテーブルに変換することです。
+## dimensional modeling とは
+dimensional modeling は、1996年にRalph Kimball氏が著書「The Data Warehouse Toolkit」で紹介した手法です。
+dimensional modeling の目的は、raw データを、ビジネスを表現するファクトテーブルとディメンションテーブルに変換することです。
 
 ディメンショナルモデリングのメリットを挙げます：
 
-- 分析用のデータモデルがよりシンプルになる： 分析用にdimentional model を使用する際、ファクトテーブルとディメンションテーブル間の結合は、サロゲートキーを使用することで簡単に行うことができ、複雑な結合を行う必要がない
+- 分析用のデータモデルがよりシンプルになる： 分析用にdimensional model を使用する際、ファクトテーブルとディメンションテーブル間の結合は、サロゲートキーを使用することで簡単に行うことができ、複雑な結合を行う必要がない
 - Don’t repeat yourself[^1]：ディメンションは、他のファクトテーブルで簡単に再利用でき、労力とコード・ロジックの重複を避けることができます。再利用可能なディメンションは、[コンフォームド・ディメンション](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/conformed-dimension/)と呼ばれます。
-- データ検索の高速化： Dimentional model に対して実行される分析クエリは、結合や集約などのデータ変換がすでに適用されているため、3NFモデルよりも大幅に高速です。
-- 実際のビジネスプロセスとの密接な整合性：ビジネスプロセスとメトリクスは、dimentional model の一部としてモデル化され、計算される。これにより、モデル化されたデータが容易に利用できるようになる
+- データ検索の高速化： dimensional model に対して実行される分析クエリは、結合や集約などのデータ変換がすでに適用されているため、3NFモデルよりも大幅に高速です。
+- 実際のビジネスプロセスとの密接な整合性：ビジネスプロセスとメトリクスは、dimensional model の一部としてモデル化され、計算される。これにより、モデル化されたデータが容易に利用できるようになる
 
 [^1]: DRYとは、"Don't Repeat Yourself "の略で、ソフトウェア開発の原則の1つです。この原則に従うと、繰り返しのパターンや重複するコードやロジックを減らし、モジュール化された参照可能なコードにすることを目指すことになります。
 
-さて、dimentional modeling の大まかな概念と利点を理解したところで、実際に dbt を使用して最初の dimentional model を作成してみましょう。
+さて、dimensional modeling の大まかな概念と利点を理解したところで、実際に dbt を使用して最初の dimensional model を作成してみましょう。
 
 ## 準備
 実行環境は docker で作成します。Docker Desktop version 23.0.5 で動作確認しています。
@@ -209,7 +210,7 @@ adventureworks:
 
 ### Step 5: Install dbt dependencies
 
-[`dbt_utils`](https://hub.getdbt.com/dbt-labs/dbt_utils/latest/) を使用するため、dbt deps でパッケージをインストールします：
+[`dbt_utils`](https://hub.getdbt.com/dbt-labs/dbt_utils/latest/) を使用するため、`dbt deps` でパッケージをインストールします：
 
 ```
 dbt deps
@@ -338,7 +339,7 @@ select * from sales.salesorderheader limit 10;
 <!-- TODO めんどくさいので一気に pandas profiling とか実行するやつほしいね -->
 
 
-dbt プロジェクトとデータベースのセットアップが完了したら、次は dimention model に必要なテーブルを特定するパートに移ります。
+dbt プロジェクトとデータベースのセットアップが完了したら、次は dimension model に必要なテーブルを特定するパートに移ります。
 
 ## Part 2: Identify the business process
 
@@ -357,11 +358,11 @@ dbt プロジェクト、データベースのセットアップが完了し、�
 > - 配送先の国、州、都市
 
 ビジネスユーザーから提供された情報に基づいて、あなたは問題のビジネスプロセスが「販売」プロセスであることを特定しました。
-次のパートでは、販売プロセスの dimentional model を設計します。
+次のパートでは、販売プロセスの dimensional model を設計します。
 
 ## Part 3: Identify the fact and dimension tables 
 
-前編で提供された情報をもとに、AdventureWorks のビジネスにおける販売プロセスを表現する dimentional model を作成し、さらに次の条件でデータを切り分けられるようにしましょう：
+前編で提供された情報をもとに、AdventureWorks のビジネスにおける販売プロセスを表現する dimensional model を作成し、さらに次の条件でデータを切り分けられるようにしましょう：
 
 - 製品カテゴリーとサブカテゴリー
 - 顧客
@@ -598,10 +599,10 @@ models:
 `dbt run` と `dbt test` コマンドを実行すると、dbt モデルの実行とモデルのテストができます：
 
 ```
-$ dbt run && dbt test 
+dbt run && dbt test 
 ```
 
-（`dbt-dimentional-modeling` リポジトリのソースを丸ごと持ってきている場合、ここで `dbt run` するとファクトテーブルもできてしまうので、`dim_product` だけ実行する。残りは次のパートで。。。）
+（`dbt-dimensional-modeling` リポジトリのソースを丸ごと持ってきている場合、ここで `dbt run` すると他のテーブルもできてしまうので、`dim_product` だけ実行する。残りは次のパートで。。。）
 
 <details>
 <summary>出力例</summary>
@@ -669,7 +670,172 @@ $ dbt test --select dim_product
 あとは、先に確認したすべてのディメンションテーブルに対して同じ手順の繰り返しです。
 次のパートに進む前に、すべてのディメンジョンテーブルを作成することを確認してください。
 
+### Step おまけ: Other dimension tables
+
+残りのディメンションテーブルで行っている処理を見ていきましょう。
+
+> `dim_address` : 住所、州、国、地域を結合したディメンションテーブル
+
+住所、州、国、地域 を抽出してサロゲートキーを付ける。特段変わった処理はしていない。
+
+> `dim_customer` : 顧客、個人、店舗を結合したディメンションテーブル
+
+顧客のファーストネーム、ミドルネーム、ラストネームを結合して、フルネームを作成している。他には特段変わった処理はない。
+
+```sql
+...
+stg_person as (
+    select
+        businessentityid,
+        concat(coalesce(firstname, ''), ' ', coalesce(middlename, ''), ' ', coalesce(lastname, '')) as fullname
+    from {{ ref('person') }}
+),
+...
+```
+
+> `dim_credit_card` : `creditcard` から作成したディメンションテーブル
+
+クレジットカードIDで distinct したやつ。特段変わった処理はしていない。
+
+> `dim_order_status` : `salesorderheader` から distinct status をとって作成したディメンションテーブル
+
+注文ステータス（番号）にそれぞれ名前を付けている。名前のほうが格段にわかりやすい。
+
+```sql
+...
+select
+    {{ dbt_utils.generate_surrogate_key(['stg_order_status.order_status']) }} as order_status_key,
+    order_status,
+    case
+        when order_status = 1 then 'in_process'
+        when order_status = 2 then 'approved'
+        when order_status = 3 then 'backordered'
+        when order_status = 4 then 'rejected'
+        when order_status = 5 then 'shipped'
+        when order_status = 6 then 'cancelled'
+        else 'no_status'
+    end as order_status_name
+from stg_order_status
+```
+
+> `dim_date` : [dbt_date](https://hub.getdbt.com/calogica/dbt_date/latest/) パッケージを使用して生成された、日
+
+特段変わった処理はしていない。
+
+ひととおり眺めたところで、すべてのディメンションテーブルに対して `dbt run` を実行します。
+
+```
+dbt run --select "marts.dim_*"
+```
+
+<details>
+<summary>run 出力例</summary>
+
+```log
+10:28:33  Running with dbt=1.5.0
+10:28:35  Found 8 models, 42 tests, 0 snapshots, 0 analyses, 420 macros, 0 operations, 15 seed files, 0 sources, 0 exposures, 0 metrics, 0 groups
+10:28:35
+10:28:35  Concurrency: 12 threads (target='postgres')
+10:28:35
+10:28:35  1 of 6 START sql table model marts.dim_address ................................. [RUN]
+10:28:35  2 of 6 START sql table model marts.dim_credit_card ............................. [RUN]
+10:28:35  3 of 6 START sql table model marts.dim_customer ................................ [RUN]
+10:28:35  4 of 6 START sql table model marts.dim_date .................................... [RUN]
+10:28:35  5 of 6 START sql table model marts.dim_order_status ............................ [RUN]
+10:28:35  6 of 6 START sql table model marts.dim_product ................................. [RUN]
+10:28:35  1 of 6 OK created sql table model marts.dim_address ............................ [SELECT 1675 in 0.32s]
+10:28:35  6 of 6 OK created sql table model marts.dim_product ............................ [SELECT 504 in 0.32s]
+10:28:35  2 of 6 OK created sql table model marts.dim_credit_card ........................ [SELECT 1316 in 0.32s]
+10:28:35  4 of 6 OK created sql table model marts.dim_date ............................... [SELECT 731 in 0.32s]
+10:28:35  5 of 6 OK created sql table model marts.dim_order_status ....................... [SELECT 1 in 0.33s]
+10:28:35  3 of 6 OK created sql table model marts.dim_customer ........................... [SELECT 19820 in 0.34s]
+10:28:35
+10:28:35  Finished running 6 table models in 0 hours 0 minutes and 0.52 seconds (0.52s).
+10:28:35
+10:28:35  Completed successfully
+10:28:35
+10:28:35  Done. PASS=6 WARN=0 ERROR=0 SKIP=0 TOTAL=6
+```
+
+</details>
+
+```
+dbt test --select "marts.dim_*"
+```
+
+<details>
+<summary>test 出力例</summary>
+
+```log
+11:28:59  Running with dbt=1.5.0
+11:29:01  Found 8 models, 42 tests, 0 snapshots, 0 analyses, 420 macros, 0 operations, 15 seed files, 0 sources, 0 exposures, 0 metrics, 0 groups
+11:29:01
+11:29:02  Concurrency: 12 threads (target='postgres')
+11:29:02
+11:29:02  1 of 25 START test not_null_dim_address_address_key ............................ [RUN]
+11:29:02  2 of 25 START test not_null_dim_address_addressid .............................. [RUN]
+11:29:02  3 of 25 START test not_null_dim_credit_card_cardtype ........................... [RUN]
+11:29:02  4 of 25 START test not_null_dim_credit_card_creditcard_key ..................... [RUN]
+11:29:02  5 of 25 START test not_null_dim_credit_card_creditcardid ....................... [RUN]
+11:29:02  6 of 25 START test not_null_dim_customer_customer_key .......................... [RUN]
+11:29:02  7 of 25 START test not_null_dim_customer_customerid ............................ [RUN]
+11:29:02  8 of 25 START test not_null_dim_date_date_day .................................. [RUN]
+11:29:02  9 of 25 START test not_null_dim_date_date_key .................................. [RUN]
+11:29:02  10 of 25 START test not_null_dim_order_status_order_status ..................... [RUN]
+11:29:02  11 of 25 START test not_null_dim_order_status_order_status_key ................. [RUN]
+11:29:02  12 of 25 START test not_null_dim_product_product_key ........................... [RUN]
+11:29:02  1 of 25 PASS not_null_dim_address_address_key .................................. [PASS in 0.31s]
+11:29:02  4 of 25 PASS not_null_dim_credit_card_creditcard_key ........................... [PASS in 0.30s]
+11:29:02  2 of 25 PASS not_null_dim_address_addressid .................................... [PASS in 0.30s]
+11:29:02  5 of 25 PASS not_null_dim_credit_card_creditcardid ............................. [PASS in 0.30s]
+11:29:02  3 of 25 PASS not_null_dim_credit_card_cardtype ................................. [PASS in 0.31s]
+11:29:02  6 of 25 PASS not_null_dim_customer_customer_key ................................ [PASS in 0.30s]
+11:29:02  7 of 25 PASS not_null_dim_customer_customerid .................................. [PASS in 0.30s]
+11:29:02  9 of 25 PASS not_null_dim_date_date_key ........................................ [PASS in 0.30s]
+11:29:02  8 of 25 PASS not_null_dim_date_date_day ........................................ [PASS in 0.31s]
+11:29:02  10 of 25 PASS not_null_dim_order_status_order_status ........................... [PASS in 0.30s]
+11:29:02  11 of 25 PASS not_null_dim_order_status_order_status_key ....................... [PASS in 0.30s]
+11:29:02  12 of 25 PASS not_null_dim_product_product_key ................................. [PASS in 0.31s]
+11:29:02  13 of 25 START test not_null_dim_product_product_name .......................... [RUN]
+11:29:02  14 of 25 START test not_null_dim_product_productid ............................. [RUN]
+11:29:02  15 of 25 START test unique_dim_address_address_key ............................. [RUN]
+11:29:02  16 of 25 START test unique_dim_address_addressid ............................... [RUN]
+11:29:02  17 of 25 START test unique_dim_credit_card_creditcardid ........................ [RUN]
+11:29:02  18 of 25 START test unique_dim_customer_customer_key ........................... [RUN]
+11:29:02  19 of 25 START test unique_dim_customer_customerid ............................. [RUN]
+11:29:02  20 of 25 START test unique_dim_date_date_day ................................... [RUN]
+11:29:02  21 of 25 START test unique_dim_date_date_key ................................... [RUN]
+11:29:02  22 of 25 START test unique_dim_order_status_order_status ....................... [RUN]
+11:29:02  23 of 25 START test unique_dim_order_status_order_status_key ................... [RUN]
+11:29:02  24 of 25 START test unique_dim_product_product_key ............................. [RUN]
+11:29:02  13 of 25 PASS not_null_dim_product_product_name ................................ [PASS in 0.28s]
+11:29:02  14 of 25 PASS not_null_dim_product_productid ................................... [PASS in 0.28s]
+11:29:02  15 of 25 PASS unique_dim_address_address_key ................................... [PASS in 0.28s]
+11:29:02  17 of 25 PASS unique_dim_credit_card_creditcardid .............................. [PASS in 0.28s]
+11:29:02  16 of 25 PASS unique_dim_address_addressid ..................................... [PASS in 0.28s]
+11:29:02  19 of 25 PASS unique_dim_customer_customerid ................................... [PASS in 0.28s]
+11:29:02  20 of 25 PASS unique_dim_date_date_day ......................................... [PASS in 0.28s]
+11:29:02  18 of 25 PASS unique_dim_customer_customer_key ................................. [PASS in 0.29s]
+11:29:02  21 of 25 PASS unique_dim_date_date_key ......................................... [PASS in 0.28s]
+11:29:02  22 of 25 PASS unique_dim_order_status_order_status ............................. [PASS in 0.28s]
+11:29:02  23 of 25 PASS unique_dim_order_status_order_status_key ......................... [PASS in 0.28s]
+11:29:02  24 of 25 PASS unique_dim_product_product_key ................................... [PASS in 0.29s]
+11:29:02  25 of 25 START test unique_dim_product_productid ............................... [RUN]
+11:29:02  25 of 25 PASS unique_dim_product_productid ..................................... [PASS in 0.05s]
+11:29:02
+11:29:02  Finished running 25 tests in 0 hours 0 minutes and 0.97 seconds (0.97s).
+11:29:02
+11:29:02  Completed successfully
+11:29:02
+11:29:02  Done. PASS=25 WARN=0 ERROR=0 SKIP=0 TOTAL=25
+```
+
+</details>
+
 ## Part 5: Create the fact table
+
+ディメンションテーブルをすべて作成したら、次はファクトテーブル  `fct_sales`  を作成します。
+
 ### Step 1: Create model files
 ### Step 2: Fetch data from the upstream tables
 ### Step 3: Perform joins
