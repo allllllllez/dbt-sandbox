@@ -1,0 +1,32 @@
+################################################################################
+# * dbt-snowflake environments
+#     docker compose up -d --build
+# * requirements:
+#     ...
+# See: https://docs.getdbt.com/docs/core/docker-install
+################################################################################
+services:
+  dev_dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.5.0
+    entrypoint: bash
+    tty: true
+    volumes:
+      - ./app:/usr/app
+      - ./profiles/profiles.yml:/root/.dbt/profiles.yml
+    network_mode: host
+    env_file:
+      - .postgres.env
+    depends_on:
+      - dev_postgres
+  dev_postgres:
+    image: postgres:15.2
+    volumes:
+      - ./initdb:/docker-entrypoint-initdb.d
+    ports:
+      - 5430:5432
+    env_file:
+      - .postgres.env
+    # environment:
+    #   - POSTGRES_USER=postgres
+    #   - POSTGRES_PASSWORD
+    #   - POSTGRES_DATABASE=adventureworks
