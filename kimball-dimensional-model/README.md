@@ -1,6 +1,8 @@
 # Building a Kimball dimensional model with dbt <!-- omit in toc -->
 [Building a Kimball dimensional model with dbt _ dbt Developer Blog](https://docs.getdbt.com/blog/kimball-dimensional-model) をやるよ。
-画像は、一部を除いて全て原文から引用したものです。
+
+※画像は、一部を除いて全て原文から引用したものです。
+
 
 # 目次 <!-- omit in toc -->
 - [解説](#解説)
@@ -42,6 +44,8 @@
         - [Step 9: Build dbt models](#step-9-build-dbt-models)
     - [Part 6: Document the dimensional model relationships](#part-6-document-the-dimensional-model-relationships)
         - [おまけ：どうしても手書きしたくない人のために](#おまけどうしても手書きしたくない人のために)
+                - [dbdiagram で開く](#dbdiagram-で開く)
+                - [dbdocs で表示](#dbdocs-で表示)
     - [Part 7: Consume dimensional model](#part-7-consume-dimensional-model)
 - [Learning resources](#learning-resources)
 
@@ -1147,8 +1151,8 @@ dimentional model の利用者がテーブル間の関係を理解しやすく�
 
 ### おまけ：どうしても手書きしたくない人のために
 
-どうしても手書きしたくないので、[dbterd]() で書きます。
-準備として、Foreign key を貼ります。
+どうしても手書きしたくないので、[dbterd](https://github.com/datnguye/dbterd) で書きます。
+まずは、外部キーを貼ります（リレーションが張られていないことには描画できないので）
 
 <details>
 <summary>外部キー貼り版 fct_sales</summary>
@@ -1381,7 +1385,7 @@ root@docker-desktop:/usr/app/dbt/dbt-dimensional-modelling/adventureworks# dbt d
 
 </details>
 
-続けて dbterd を[README](https://github.com/datnguye/dbterd/blob/main/README.md)に沿ってインストール。
+続けて dbterd を[README](https://github.com/datnguye/dbterd/blob/main/README.md)に沿ってインストールします。
 
 ```
 pip install dbterd --upgrade
@@ -1406,7 +1410,143 @@ root@docker-desktop:/usr/app/dbt/dbt-dimensional-modelling/adventureworks# dbter
 
 </details>
 
-これでER図が作成されました。[dbdocs](https://dbdocs.io/)で表示してみましょう。
+これでER図が `output.dbml` に作成されました。
+[DBML](https://dbml.dbdiagram.io/docs/) は、データベースのスキーマ構造を定義するために使用する、オープンソースのマークアップ言語です。このファイルから図を描画するには、次の方法があります：
+- [dbdiagram.io](https://dbdiagram.io/) で dbml ファイルを開く
+- [dbdocs](https://dbdocs.io/) を利用してWebページに描画してもらう（テーブル定義ごと）
+
+##### dbdiagram で開く
+
+まずは [dbdiagram.io](https://dbdiagram.io/) で表示してみましょう。
+方法は、[dbdiagram のアプリケーション](https://dbdiagram.io/d/) を開いて、左側に dbml ファイルの中身をコピペするだけです。
+
+<img src="./img/dbterd-dbdiagram-er-diagram.png" width=800>
+
+<details>
+<summary>dbml ファイル</summary>
+
+```dbml
+//Tables (based on the selection criteria)
+//--configured at schema: adventureworks.marts
+Table "model.adventureworks.dim_address" {
+  "address_key" "text" [note: "The surrogate key of the addressid"]
+  "addressid" "integer" [note: "The natural key"]
+  "city_name" "character varying" [note: "The city name"]
+  "state_name" "character varying" [note: "The state name"]
+  "country_name" "character varying" [note: "The country name"]
+}
+//--configured at schema: adventureworks.marts
+Table "model.adventureworks.dim_credit_card" {
+  "creditcard_key" "text" [note: "The surrogate key of the creditcard id"]
+  "creditcardid" "integer" [note: "The natural key of the creditcard"]
+  "cardtype" "character varying" [note: "The card name"]
+}
+//--configured at schema: adventureworks.marts
+Table "model.adventureworks.dim_customer" {
+  "customer_key" "text" [note: "The surrogate key of the customer"]
+  "customerid" "integer" [note: "The natural key of the customer"]
+  "businessentityid" "integer"
+  "fullname" "text" [note: "The customer name. Adopted as customer_fullname when person name is not null."]
+  "storebusinessentityid" "integer"
+  "storename" "character varying" [note: "The store name."]
+}
+//--configured at schema: adventureworks.marts
+Table "model.adventureworks.dim_date" {
+  "date_key" "text" [note: "The surrogate key of the date table"]
+  "date_day" "date" [note: "The natural key of the date table"]
+  "prior_date_day" "date"
+  "next_date_day" "date"
+  "prior_year_date_day" "date"
+  "prior_year_over_year_date_day" "date"
+  "day_of_week" "integer"
+  "day_of_week_name" "character varying"
+  "day_of_month" "integer"
+  "day_of_year" "integer"
+}
+//--configured at schema: adventureworks.marts
+Table "model.adventureworks.dim_order_status" {
+  "order_status_key" "text" [note: "The surrogate key of the order status"]
+  "order_status" "smallint" [note: "The natural key of the order status table"]
+  "order_status_name" "text"
+}
+//--configured at schema: adventureworks.marts
+Table "model.adventureworks.dim_product" {
+  "product_key" "text" [note: "The surrogate key of the product"]
+  "productid" "integer" [note: "The natural key of the product"]
+  "product_name" "character varying" [note: "The product name"]
+  "productnumber" "character varying"
+  "color" "character varying"
+  "class" "character varying"
+  "product_subcategory_name" "character varying"
+  "product_category_name" "character varying"
+}
+//--configured at schema: adventureworks.marts
+Table "model.adventureworks.obt_sales" {
+  "sales_key" "text" [note: "The surrogate key of the fct sales"]
+  "salesorderid" "integer" [note: "The natural key of the saleorderheader"]
+  "salesorderdetailid" "integer" [note: "The natural key of the salesorderdetail"]
+  "unitprice" "numeric" [note: "The unit price of the product"]
+  "orderqty" "smallint" [note: "The quantity of the product"]
+  "revenue" "numeric" [note: "The revenue obtained by multiplying unitprice and orderqty"]
+  "productid" "integer"
+  "product_name" "character varying"
+  "productnumber" "character varying"
+  "color" "character varying"
+  "class" "character varying"
+  "product_subcategory_name" "character varying"
+  "product_category_name" "character varying"
+  "customerid" "integer"
+  "businessentityid" "integer"
+  "fullname" "text"
+  "storebusinessentityid" "integer"
+  "storename" "character varying"
+  "creditcardid" "integer"
+  "cardtype" "character varying"
+  "addressid" "integer"
+  "city_name" "character varying"
+  "state_name" "character varying"
+  "country_name" "character varying"
+  "order_status" "smallint"
+  "order_status_name" "text"
+  "date_day" "date"
+  "prior_date_day" "date"
+  "next_date_day" "date"
+  "prior_year_date_day" "date"
+  "prior_year_over_year_date_day" "date"
+  "day_of_week" "integer"
+  "day_of_week_name" "character varying"
+  "day_of_month" "integer"
+  "day_of_year" "integer"
+}
+//--configured at schema: adventureworks.marts
+Table "model.adventureworks.fct_sales" {
+  "sales_key" "text" [note: "The surrogate key of the fct sales"]
+  "product_key" "text" [note: "The foreign key of the product"]
+  "customer_key" "text" [note: "The foreign key of the customer"]
+  "creditcard_key" "text" [note: "The foreign key of the creditcard. If no creditcard exists, it was assumed that purchase was made in cash."]
+  "ship_address_key" "text" [note: "The foreign key of the shipping address"]
+  "order_status_key" "text" [note: "The foreign key of the order status"]
+  "order_date_key" "text" [note: "The foreign key of the order date"]
+  "salesorderid" "integer" [note: "The natural key of the saleorderheader"]
+  "salesorderdetailid" "integer" [note: "The natural key of the salesorderdetail"]
+  "unitprice" "numeric" [note: "The unit price of the product"]
+  "orderqty" "smallint" [note: "The quantity of the product"]
+  "revenue" "numeric" [note: "The revenue obtained by multiplying unitprice and orderqty"]
+}
+//Refs (based on the DBT Relationship Tests)
+Ref: "model.adventureworks.fct_sales"."product_key" > "model.adventureworks.dim_product"."product_key"
+Ref: "model.adventureworks.fct_sales"."customer_key" > "model.adventureworks.dim_customer"."customer_key"
+Ref: "model.adventureworks.fct_sales"."creditcard_key" > "model.adventureworks.dim_credit_card"."creditcard_key"
+Ref: "model.adventureworks.fct_sales"."ship_address_key" > "model.adventureworks.dim_address"."address_key"
+Ref: "model.adventureworks.fct_sales"."order_date_key" > "model.adventureworks.dim_date"."date_key"
+Ref: "model.adventureworks.fct_sales"."order_status_key" > "model.adventureworks.dim_order_status"."order_status_key"
+```
+
+</details>
+
+##### dbdocs で表示
+
+次に [dbdocs](https://dbdocs.io/) で表示してみましょう。
 dbdocs コマンドを実行する前に、`dbtend login` でログインします。Email にするとワンタイムコード認証で済むので、今回はそちらを使います。
 
 <details>
@@ -1448,11 +1588,11 @@ root@docker-desktop:/usr/app/dbt/dbt-dimensional-modelling/adventureworks# dbdoc
 
 </details>
 
-表示されたURLにアクセスすると、ER図などのテーブル情報を見ることができます。
+表示されたURLにアクセスすると、ER図などのテーブル情報を見ることができます。[^5]
+
+[^5]: 今回の手順ではパブリックにしていますが、公開範囲を限定することはできます。 https://dbdocs.io/docs/password-protection
 
 <img src="./img/dbterd-er-diagram.png" width=800>
-
-（カードのリレーションが落ちている気がしますが、、、）
 
 ## Part 7: Consume dimensional model
 
