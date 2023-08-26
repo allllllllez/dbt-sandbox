@@ -44,8 +44,8 @@
         - [Step 9: Build dbt models](#step-9-build-dbt-models)
     - [Part 6: Document the dimensional model relationships](#part-6-document-the-dimensional-model-relationships)
         - [おまけ：どうしても手書きしたくない人のために](#おまけどうしても手書きしたくない人のために)
-                - [dbdiagram で開く](#dbdiagram-で開く)
-                - [dbdocs で表示](#dbdocs-で表示)
+            - [dbdiagram で開く](#dbdiagram-で開く)
+            - [dbdocs で表示](#dbdocs-で表示)
     - [Part 7: Consume dimensional model](#part-7-consume-dimensional-model)
 - [Learning resources](#learning-resources)
 
